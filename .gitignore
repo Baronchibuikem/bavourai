@@ -1,0 +1,7 @@
+example.py
+bavour_db/
+.DS_Store
+attention.pdf
+.env
+__pycache__/
+.python-version

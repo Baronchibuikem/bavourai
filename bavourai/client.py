@@ -14,20 +14,21 @@ class BavourClient:
         model: str = None,
         api_key: str = None,
     ):
-        os.environ['LANGCHAIN_API_KEY'] = api_key
+        # os.environ['LANGCHAIN_API_KEY'] = api_key
         self.embedding_generator = EmbeddingGenerator(model=model)
         self.vector_db = VectorDatabase(
             embedding_model=self.embedding_generator.embedding_model,
         )
         self.llm_model = Ollama(model=model)
    
-    def add_prompt(self, prompt):
+    def add_data(self, prompt, batch_size=100):
         """
-        Adds a prompt or a list of prompts to the database.
+        Adds a prompt or a list of prompts to the database in batches.
 
         Args:
             prompt (dict or list): A single prompt or a list of prompts with {"role": "", "content": ""}.
             user_id (str): The ID of the user associated with the prompts.
+            batch_size (int): The size of each batch to process at once.
         """
         if isinstance(prompt, dict):
             # Single prompt
@@ -37,22 +38,28 @@ class BavourClient:
             prompts = prompt
         else:
             raise ValueError("Prompt must be a dictionary or a list of dictionaries with 'role' and 'content' keys.")
+        print({"prompt************": prompt})
+        # Process prompts in batches
+        for batch_start in range(0, len(prompts), batch_size):
+            batch_end = min(batch_start + batch_size, len(prompts))
+            batch = prompts[batch_start:batch_end]
 
-        documents = []
-        # Generate embeddings and add to the database
-        for index, prompt in enumerate(prompts):
-            embedding = self.embedding_generator.generate_embedding(prompt["content"])
-            doc = Document(
-                page_content=prompt["content"],
-                metadata={**prompt.get('metadata', {})},
-                id=prompt["id"] if prompt["id"] else index + 1,
-                embedding=embedding,
+            documents = []
+            # Generate embeddings and add to the database for each prompt in the batch
+            for index, prompt in enumerate(batch):
+                embedding = self.embedding_generator.generate_embedding(prompt["content"])
+                doc = Document(
+                    page_content=prompt["content"],
+                    metadata={**prompt.get('metadata', {})},
+                    id=batch_start + index + 1,  # Ensure unique IDs across batches
+                    embedding=embedding,
+                )
+                documents.append(doc)
 
-            )
-            documents.append(doc)
-        self.vector_db.add_data(documents=documents)
-        
-        return "Prompt(s) added successfully."
+            # Add the batch to the vector DB
+            self.vector_db.add_data(documents=documents)
+            print(f"Processed batch {batch_start // batch_size + 1} of {len(prompts) // batch_size + 1}")
+
 
     def search(self, query: str, user_id: str, top_k: int = 2):
         results = self.vector_db.get(query=query, top_k=top_k, user_id=user_id)

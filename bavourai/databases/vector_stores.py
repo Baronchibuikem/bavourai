@@ -40,7 +40,11 @@ class VectorDatabase:
 
     def get(self, query: str, top_k: int = 4, user_id=None):
         keyword = extract_entities(query)
-        keyword_list = str(max(keyword))
+
+        if keyword:
+            keyword_list = str(max(keyword))
+        else:
+            keyword_list = [query]
         # Retrieve initial results without filtering on category substring
         results = self.db.similarity_search(
             query=query,
@@ -53,8 +57,7 @@ class VectorDatabase:
             filtered_results = [
                 result
                 for result in results
-                if keyword_list.lower() in result.metadata.get("category", "").lower()
-                or keyword_list.lower() in result.page_content.lower()
+                if keyword_list in result.page_content
             ]
         else:
             filtered_results = results

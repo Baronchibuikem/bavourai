@@ -6,3 +6,5 @@ attention.pdf
 __pycache__/
 .python-version
 data/
+venv/
+venv*

@@ -1,23 +1,57 @@
 from langchain_community.vectorstores import Chroma
-from langchain.embeddings.base import Embeddings
+from langchain_ollama import OllamaEmbeddings
 from typing import List
 from langchain_chroma import Chroma
 from loguru import logger
 from langchain_core.documents import Document
-import spacy
+from typing import List
 
-# Load a spaCy model
-nlp = spacy.load("en_core_web_sm")
+import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 
-def extract_entities(query: str):
-    doc = nlp(query)
-    entities = [ent.text for ent in doc.ents]
-    return entities
+def extract_rating_condition(query: str):
+    """
+    Extracts rating condition (e.g., "rating above 4") dynamically from the query.
+    Returns a comparison operator and the numeric rating threshold.
+    """
+    # Define natural language mappings to operators
+    operator_mappings = {
+        "above": ">",
+        "greater than": ">",
+        "bigger than": ">",
+        "below": "<",
+        "less than": "<",
+        "smaller than": "<",
+        "equal to": "==",
+        "equal": "==",
+    }
+
+    # Check for explicit operators (>, <, >=, <=, =)
+    match = re.search(r"rating\s*(>=|>|<=|<|=)?\s*(\d+)", query, re.IGNORECASE)
+    if match:
+        operator = match.group(1) or "=="  # Default to equality if no operator is found
+        rating = int(match.group(2))
+        return operator, rating
+
+    # Check for natural language phrases
+    for phrase, operator in operator_mappings.items():
+        match = re.search(rf"{phrase}\s*(\d+)", query, re.IGNORECASE)
+        print({'match': match})
+        if match:
+            rating = int(match.group(1))
+            print({"rating": rating, "operator": operator})
+            return operator, rating
+
+    return None, None  # No rating condition found
+
+
 
 
 class VectorDatabase:
-    def __init__(self, embedding_model: Embeddings = None):
+    def __init__(self, embedding_model: OllamaEmbeddings ):
         self.db = Chroma(
             collection_name="bavour_ai_data",
             persist_directory="./bavour_db",
@@ -38,32 +72,37 @@ class VectorDatabase:
         )
         logger.debug(f"Updated document with id {updated_document['id']}")
 
-    def get(self, query: str, top_k: int = 4, user_id=None):
-        keyword = extract_entities(query)
-
-        if keyword:
-            keyword_list = str(max(keyword))
-        else:
-            keyword_list = [query]
-        # Retrieve initial results without filtering on category substring
-        results = self.db.similarity_search(
+    def get(self, query: str, top_k: int):
+        # Retrieve results with similarity scores
+        results_with_scores = self.db.similarity_search_with_score(
             query=query,
             k=top_k,
-            # filter={"user_id": user_id}
         )
-        print({"results": results})
-        # Filter results manually if a category substring filter is provided
-        if keyword_list:
-            filtered_results = [
-                result
-                for result in results
-                if keyword_list in result.page_content
-            ]
-        else:
-            filtered_results = results
+        print({'results_with_scores': results_with_scores})
 
-        # Return the top_k results after filtering
-        return filtered_results[:top_k]
+        # Extract rating condition from query
+        operator, rating_threshold = extract_rating_condition(query)
+
+        # Apply dynamic filtering based on extracted rating condition
+        filtered_results = []
+        for doc, score in results_with_scores:
+            doc_rating = int(doc.metadata.get("rating", 0))  # Convert rating to int
+
+            if operator and rating_threshold is not None:
+                if (
+                    (operator == ">" and doc_rating > rating_threshold) or
+                    (operator == ">=" and doc_rating >= rating_threshold) or
+                    (operator == "<" and doc_rating < rating_threshold) or
+                    (operator == "<=" and doc_rating <= rating_threshold) or
+                    (operator == "=" and doc_rating == rating_threshold) or
+                    (operator == "==" and doc_rating == rating_threshold)
+                ):
+                    filtered_results.append((doc, score))
+            else:
+                # If no rating filter found in query, return all results
+                filtered_results.append((doc, score))
+        return [doc for doc, score in filtered_results]
+
 
     def delete(self, id):
         self.db.delete(ids=id)
@@ -78,3 +117,4 @@ class VectorDatabase:
             self.db.get()
         )  # Depending on Chroma's API, use the method to retrieve documents
         return documents
+

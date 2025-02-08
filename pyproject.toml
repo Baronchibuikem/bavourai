@@ -26,6 +26,8 @@ mem0ai = "^0.1.38"
 spacy = "^3.8.3"
 transformers = "4.46.1"
 pandas = "^2.2.3"
+pymongo = "^4.11"
+duckdb = "^1.2.0"
 
 
 
